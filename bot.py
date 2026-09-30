@@ -5,7 +5,7 @@ import telebot
 from telebot import types
 
 # --- تنظیمات ---
-TOKEN = "8505972442:AAHWPufVfSBxfwXpKC-UidLmjBNz7E2bwUM"  # <--- توکن خودت
+TOKEN = "8505972442:AAHM3bdUUgVZHgAP5p5JTSEOYX2jz7cRfd4"  # <--- توکن خودت
 ADMIN_ID = 216989643       # <--- آیدی عددی خودت (حتما درست وارد کن)
 
 bot = telebot.TeleBot(TOKEN)
