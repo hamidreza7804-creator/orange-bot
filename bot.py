@@ -3,76 +3,86 @@ import telebot
 from telebot import types
 from flask import Flask
 from threading import Thread
+import random
+import string
 
 TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-# حافظه برای ذخیره کارها (در RAM)
-user_tasks = {}
+# دیتابیس‌های موقت در RAM
+# pairs: کدهای جفت شدن - {code: user1_id}
+# connections: اتصالات - {user_id: partner_id}
+# tasks: لیست کارها - {group_id: [{"text": "...", "done": False}]}
+pairs = {}
+connections = {}
+tasks_db = {}
 
-# --- ساخت منوی اصلی ---
-def main_menu():
-    markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("➕ افزودن کار", callback_data="add_task"))
-    markup.add(types.InlineKeyboardButton("📋 مشاهده لیست کارها", callback_data="show_list"))
-    return markup
+# شعرها (برای ارسال روزانه)
+poems = ["پاییز یعنی نم‌نمِ باران، یعنی تو...", "عشق یعنی لحظه‌های دونفره...", "پاییز با تو بهارِ منه."]
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, "سلام! به ربات «پاییز و نارنگی» خوش اومدی. از منوی زیر استفاده کن:", reply_markup=main_menu())
+# --- دستورات جفت شدن ---
+@bot.message_handler(commands=['pair'])
+def generate_pair_code(message):
+    code = ''.join(random.choices(string.digits, k=4))
+    pairs[code] = message.chat.id
+    bot.reply_to(message, f"کدِ جفت شدن تو اینه: `{code}`\nاین رو بفرست برای پارتنرت تا با دستور /connect ازش استفاده کنه.", parse_mode="Markdown")
 
-# --- دکمه‌ها ---
-@bot.callback_query_handler(func=lambda call: True)
-def callback_handler(call):
-    chat_id = call.message.chat.id
-    
-    if call.data == "add_task":
-        # وقتی دکمه افزودن رو می‌زنه، یک ForceReply می‌فرستیم که مستقیم جواب بده
-        msg = bot.send_message(chat_id, "چه کاری قراره انجام بدیم؟ اسمش رو بنویس:", reply_markup=types.ForceReply())
-        bot.register_next_step_handler(msg, process_task_addition)
-    
-    elif call.data == "show_list":
-        send_task_list(chat_id)
-        
-    elif call.data.startswith("toggle_"):
-        # تغییر وضعیت تیک سبز
-        index = int(call.data.split("_")[1])
-        user_tasks[chat_id][index]["done"] = not user_tasks[chat_id][index]["done"]
-        send_task_list(chat_id, edit_mode=True, message_id=call.message.message_id)
-
-# --- منطق افزودن کار ---
-def process_task_addition(message):
-    chat_id = message.chat.id
-    task_text = message.text
-    if chat_id not in user_tasks: user_tasks[chat_id] = []
-    
-    user_tasks[chat_id].append({"text": task_text, "done": False})
-    bot.send_message(chat_id, f"✅ کار «{task_text}» اضافه شد!", reply_markup=main_menu())
-
-# --- نمایش لیست شیشه‌ای ---
-def send_task_list(chat_id, edit_mode=False, message_id=None):
-    if chat_id not in user_tasks or not user_tasks[chat_id]:
-        text = "لیست خالیه، فعلاً کاری نداریم."
+@bot.message_handler(commands=['connect'])
+def connect_users(message):
+    code = message.text.split()[1] if len(message.text.split()) > 1 else None
+    if code in pairs:
+        partner_id = pairs[code]
+        # ایجاد یک شناسه گروهی برای هر دو
+        group_id = f"group_{min(message.chat.id, partner_id)}_{max(message.chat.id, partner_id)}"
+        connections[message.chat.id] = group_id
+        connections[partner_id] = group_id
+        bot.reply_to(message, "تبریک! شما به پارتنرت متصل شدی. حالا می‌تونید کارهای مشترک تعریف کنید.")
     else:
-        text = "کارهای لیست:"
-        
-    markup = types.InlineKeyboardMarkup()
-    if chat_id in user_tasks:
-        for i, task in enumerate(user_tasks[chat_id]):
-            status = "✅" if task["done"] else "⭕"
-            markup.add(types.InlineKeyboardButton(f"{status} {task['text']}", callback_data=f"toggle_{i}"))
+        bot.reply_to(message, "کد اشتباهه یا منقضی شده.")
+
+# --- مدیریت کارها ---
+@bot.message_handler(commands=['add'])
+def add_task(message):
+    if message.chat.id not in connections:
+        bot.reply_to(message, "اول باید با پارتنرت جفت بشی (دستور /pair)")
+        return
     
-    markup.add(types.InlineKeyboardButton("🔙 بازگشت به منو", callback_data="show_list")) # دکمه بازگشت
+    group_id = connections[message.chat.id]
+    task_text = message.text.replace('/add', '').strip()
+    
+    if group_id not in tasks_db: tasks_db[group_id] = []
+    tasks_db[group_id].append({"text": task_text, "done": False})
+    
+    bot.reply_to(message, "✅ اضافه شد! هردوتون می‌بینیدش.")
 
-    if edit_mode:
-        bot.edit_message_text(text, chat_id, message_id, reply_markup=markup)
-    else:
-        bot.send_message(chat_id, text, reply_markup=markup)
+@bot.message_handler(commands=['list'])
+def list_tasks(message):
+    if message.chat.id not in connections:
+        bot.reply_to(message, "اول باید با پارتنرت جفت بشی.")
+        return
+        
+    group_id = connections[message.chat.id]
+    tasks = tasks_db.get(group_id, [])
+    
+    markup = types.InlineKeyboardMarkup()
+    for i, t in enumerate(tasks):
+        status = "✅" if t["done"] else "⭕"
+        markup.add(types.InlineKeyboardButton(f"{status} {t['text']}", callback_data=f"toggle_{i}"))
+    
+    bot.reply_to(message, "لیست کارهای تیم شما:", reply_markup=markup)
 
-# --- وب‌سرور برای زنده ماندن ---
+@bot.callback_query_handler(func=lambda call: call.data.startswith("toggle_"))
+def toggle_task(call):
+    group_id = connections[call.message.chat.id]
+    index = int(call.data.split("_")[1])
+    tasks_db[group_id][index]["done"] = not tasks_db[group_id][index]["done"]
+    # (اینجا باید لیست رو رفرش کنی، مشابه کدهای قبلی)
+    bot.answer_callback_query(call.id, "وضعیت تغییر کرد!")
+
+# --- وب‌سرور ---
 app = Flask(__name__)
 @app.route('/')
-def home(): return "Bot is running!"
+def home(): return "Bot Active"
 def run(): app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
 
 if __name__ == "__main__":
