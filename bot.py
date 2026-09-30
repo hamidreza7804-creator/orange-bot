@@ -1,86 +1,74 @@
 import os
-import threading
-from flask import Flask
 import telebot
 from telebot import types
+from flask import Flask
+from threading import Thread
+import random
 
-# --- تنظیمات ---
-TOKEN = "8505972442:AAHM3bdUUgVZHgAP5p5JTSEOYX2jz7cRfd4"  # <--- توکن خودت
-ADMIN_ID = 216989643       # <--- آیدی عددی خودت (حتما درست وارد کن)
-
+# تنظیم توکن از متغیرهای محیطی Render (امنیت)
+TOKEN = os.environ.get("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
-app = Flask(__name__)
 
-# دیتابیس حافظه
-lists = {} 
-user_state = {} 
+# حافظه موقت برای کارها
+tasks = {}
 
-@app.route('/')
-def home(): return "ربات در حال اجراست!"
+# جملات عاشقانه و پاییزی
+romantic_responses = [
+    "جان دلم؟ نارنگیِ پاییزیِ من، چی تو ذهنته؟",
+    "کنارت بودن مثل نشستن زیر نور خورشیدِ یه عصر پاییزیه، گرم و قشنگ.",
+    "من اینجا هستم، فقط برای تو. بگو چی کار کنم که لبخند بزنی؟",
+    "پاییز با تو بهارِ منه. هر کاری بخوای برات انجام می‌دم.",
+    "فدای اون قلب مهربونت. بگو چی تو دلته؟"
+]
 
-def run_flask():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
-
-# --- منوی اصلی ---
-def main_menu():
-    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    markup.add("💌 یادداشت عاشقانه", "➕ افزودن کار جدید", "📋 لیست کارهای دونفره")
-    # دکمه ادمین رو اضافه می‌کنیم (برای همه نشون داده می‌شه اما فقط برای ادمین کار می‌کنه)
-    markup.add("⚙️ پنل مدیریت")
-    return markup
-
-# --- هندلرها ---
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, "سلام! به ربات اختصاصی ما خوش اومدی ❤️", reply_markup=main_menu())
-
-@bot.message_handler(func=lambda message: True)
-def handle_messages(message):
+# --- بخش مدیریت لیست کارها ---
+@bot.message_handler(commands=['add'])
+def add_task(message):
     user_id = message.chat.id
-    text = message.text
+    task_text = message.text.replace('/add', '').strip()
+    if not task_text:
+        bot.reply_to(message, "یادت رفت بنویسی چی کار داری؟ مثلا بنویس: /add خرید نارنگی")
+        return
+    
+    if user_id not in tasks: tasks[user_id] = []
+    tasks[user_id].append({"text": task_text, "done": False})
+    bot.reply_to(message, f"ثبت شد: «{task_text}». لیستت رو با /list ببین.")
 
-    # --- پنل مدیریت ---
-    if text == "⚙️ پنل مدیریت":
-        if user_id == ADMIN_ID:
-            stats = f"📊 وضعیت سرور:\nتعداد لیست‌های ساخته شده: {len(lists)}\n\n(مدیریت کاربران از اینجا در دسترس است)"
-            bot.send_message(user_id, stats)
-        else:
-            bot.send_message(user_id, "❌ دسترسی غیرمجاز!")
+@bot.message_handler(commands=['list'])
+def show_tasks(message):
+    user_id = message.chat.id
+    if user_id not in tasks or not tasks[user_id]:
+        bot.reply_to(message, "لیستت خالیه عزیزم، فعلا کاری نداریم.")
         return
 
-    # --- بخش‌های اصلی ---
-    if text == "💌 یادداشت عاشقانه":
-        user_state[user_id] = "LOVE_NOTE"
-        bot.send_message(user_id, "متن عاشقانه‌ت رو بنویس:")
-
-    elif text == "➕ افزودن کار جدید":
-        user_state[user_id] = "ADD_TASK"
-        bot.send_message(user_id, "کار جدید رو بنویس:")
-
-    elif text == "📋 لیست کارهای دونفره":
-        # نمایش لیست‌ها
-        found = False
-        for l_id, data in lists.items():
-            if user_id in data["members"]:
-                bot.send_message(user_id, f"📝 لیست: {data['title']}\n" + "\n".join([t['text'] for t in data['tasks']]))
-                found = True
-        if not found:
-            bot.send_message(user_id, "هنوز لیست کاری نداری!")
-
-    # --- ذخیره وضعیت‌ها ---
-    elif user_state.get(user_id) == "LOVE_NOTE":
-        bot.send_message(user_id, "💌 یادداشت ارسال شد!")
-        user_state[user_id] = None
+    markup = types.InlineKeyboardMarkup()
+    for i, task in enumerate(tasks[user_id]):
+        status = "✅" if task["done"] else "⭕"
+        button = types.InlineKeyboardButton(f"{status} {task['text']}", callback_data=f"toggle_{i}")
+        markup.add(button)
     
-    elif user_state.get(user_id) == "ADD_TASK":
-        # ذخیره در حافظه
-        if "default" not in lists: lists["default"] = {"title": "لیست مشترک", "members": [user_id], "tasks": []}
-        lists["default"]["tasks"].append({"text": text})
-        bot.send_message(user_id, "✅ کار اضافه شد!")
-        user_state[user_id] = None
+    bot.reply_to(message, "این هم لیست کارهای امروزمون:", reply_markup=markup)
 
-# اجرای ربات
+@bot.callback_query_handler(func=lambda call: call.data.startswith("toggle_"))
+def toggle_task(call):
+    index = int(call.data.split("_")[1])
+    user_id = call.message.chat.id
+    tasks[user_id][index]["done"] = not tasks[user_id][index]["done"]
+    show_tasks(call.message) # رفرش کردن لیست
+
+# --- بخش هوش مصنوعی عاشقانه ---
+@bot.message_handler(func=lambda message: True)
+def echo_all(message):
+    if message.text.startswith('/'): return # دستورات رو کاری نداشته باش
+    bot.reply_to(message, random.choice(romantic_responses))
+
+# --- بخش زنده نگه داشتن (Keep Alive) ---
+app = Flask(__name__)
+@app.route('/')
+def home(): return "Bot is running, my dear!"
+def run(): app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
+
 if __name__ == "__main__":
-    threading.Thread(target=run_flask, daemon=True).start()
-    bot.infinity_polling()
+    t = Thread(target=run)
+    t.start()
+    bot.polling(none_stop=True)
