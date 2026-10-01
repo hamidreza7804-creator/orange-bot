@@ -29,6 +29,7 @@ poems = [
 
 def get_main_menu():
     markup = types.InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton("➕ افزودن کار", callback_data="ask_add_task"))
     markup.add(types.InlineKeyboardButton("📋 لیست کارهای مشترک", callback_data="show_list"))
     markup.add(types.InlineKeyboardButton("📜 شعر روزانه", callback_data="show_poem"))
     markup.add(types.InlineKeyboardButton("🔗 جفت‌شدن جدید", callback_data="start_pair"))
