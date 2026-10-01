@@ -33,7 +33,7 @@ def main_menu(user_id):
         markup.add(types.InlineKeyboardButton("🛡 پنل مدیریت", callback_data="admin_panel"))
     return markup
 
-INTRO_TEXT = "🍂 **به دنیای نارنجیِ ما خوش اومدی!** 🍊\n\nاینجا خونه‌ی کوچیکِ ماست."
+INTRO_TEXT = "🍂 **به دنیای نارنجیِ ما خوش اومدی!** 🍊\n\nاینجا خونه‌ی کوچیکِ ماست، جایی که کارها رو با هم پیش می‌بریم و دلتنگی‌هامون رو با شعر پاییزی پر می‌کنیم"
 
 @bot.message_handler(commands=['start'])
 def start(message):
