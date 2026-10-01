@@ -38,6 +38,15 @@ INTRO_TEXT = "🍂 **به دنیای نارنجیِ ما خوش اومدی!** �
 @bot.message_handler(commands=['start'])
 def start(message):
     try:
+        # بررسی اینکه آیا کاربر از طریق لینکِ کسی اومده یا نه
+        args = message.text.split()
+        if len(args) > 1:
+            inviter_id = int(args[1])
+            if inviter_id != message.from_user.id:
+                user_pairs[inviter_id] = message.from_user.id
+                user_pairs[message.from_user.id] = inviter_id
+                bot.send_message(message.chat.id, "💑 پارتنر تو شناسایی شد و به هم متصل شدید!")
+        
         bot.send_message(message.chat.id, INTRO_TEXT, parse_mode="Markdown", reply_markup=main_menu(message.from_user.id))
     except Exception as e:
         print(f"Error in start: {e}")
@@ -49,15 +58,16 @@ def handle_query(call):
         gid = get_group_id(user_id)
 
         if call.data == "pair_menu":
-            code = str(user_id)[-4:]
+            # ساخت لینک دعوت اختصاصی
+            bot_username = bot.get_me().username
+            invite_link = f"https://t.me/{bot_username}?start={user_id}"
+            
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("🔑 وارد کردن کد پارتنر", callback_data="enter_code"))
+            markup.add(types.InlineKeyboardButton("🔗 کپی لینک دعوت", url=invite_link))
             markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="back_main"))
-            bot.edit_message_text(f"کد تو: `{code}`", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
-
-        elif call.data == "enter_code":
-            msg = bot.send_message(call.message.chat.id, "کد ۴ رقمی پارتنرت رو بنویس:")
-            bot.register_next_step_handler(msg, process_pairing)
+            
+            bot.edit_message_text(f"این لینک رو برای پارتنرت بفرست:\n`{invite_link}`\n\nبه محض اینکه روی لینک کلیک کنه، اتوماتیک بهت وصل می‌شه!", 
+                                  call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
 
         elif call.data == "add_task":
             msg = bot.send_message(call.message.chat.id, "متن کار جدید رو بنویس:")
@@ -71,7 +81,6 @@ def handle_query(call):
                 return
             for i, item in enumerate(tasks):
                 status = "✅" if item['done'] else "⬜️"
-                # اینجا اضافه شد: دکمه تیک + دکمه حذف در یک سطر
                 markup.row(
                     types.InlineKeyboardButton(f"{status} {item['task']}", callback_data=f"toggle_{i}"),
                     types.InlineKeyboardButton("🗑", callback_data=f"delete_{i}")
@@ -86,7 +95,6 @@ def handle_query(call):
             handle_query(call)
 
         elif call.data.startswith("delete_"):
-            # منطق جدید: حذف کار
             idx = int(call.data.split("_")[1])
             if gid in tasks_db and idx < len(tasks_db[gid]):
                 tasks_db[gid].pop(idx)
@@ -120,19 +128,6 @@ def handle_query(call):
     
     except Exception as e:
         print(f"Error in callback: {e}")
-
-def process_pairing(message):
-    try:
-        code = message.text
-        found = next((uid for uid in user_pairs.keys() if str(uid)[-4:] == code), None)
-        if found:
-            user_pairs[message.from_user.id] = found
-            user_pairs[found] = message.from_user.id
-            bot.send_message(message.chat.id, "متصل شد! 💑")
-        else:
-            bot.send_message(message.chat.id, "کد پیدا نشد.")
-    except Exception as e:
-        print(f"Pairing error: {e}")
 
 def save_task(message):
     try:
