@@ -10,8 +10,19 @@ TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
 bot = telebot.TeleBot(TOKEN)
 
-# لیست ۱۰۰ شعر پاییزی
-POEMS = [f"شعر پاییزی شماره {i}: پاییز، فصلِ عاشقانه هایِ ما..." for i in range(1, 101)]
+# لیست اشعار واقعی و متنوع (می‌توانی هر چقدر خواستی به این لیست اضافه کنی)
+POEMS = [
+    "پاییز، هزاران برگِ زرد است که در باد رقصیدند تا به من بگویند: رها کن و عاشق باش.",
+    "هر برگِ پاییزی که می‌افتد، فرصتی است برای نو شدن؛ درست مثلِ ما.",
+    "در هوایِ سردِ پاییز، گرمایِ دستانت تنها چیزیست که به دنیایم جان می‌دهد.",
+    "نارنجیِ پاییز، رنگِ دلتنگی نیست؛ رنگِ یک شروعِ دوباره در آغوشِ توست.",
+    "پاییز یعنی همین که کنارِ هم نشسته‌ایم و چای می‌نوشیم، باقی همه بهانه‌ست.",
+    "باز پاییز است و من به تو فکر می‌کنم، میانِ همهمه‌یِ برگ‌هایِ خشکِ زیرِ پا.",
+    "عشق، همانِ حالِ خوشی است که در غروبِ سردِ پاییز، گرمایِ نگاهت به من می‌بخشد.",
+    "پاییز زیباترین بهانه‌یِ خداست تا به ما یادآوری کند که تغییر، چه شکوهی دارد.",
+    "در ازدحامِ رنگ‌هایِ پاییزی، فقط تویی که در چشم‌هایم سبز می‌مانی.",
+    "عاشقانه هایمان مثلِ چایِ داغِ پاییزی، جان‌بخش و ماندگار است."
+]
 
 user_pairs = {}
 tasks_db = {}
@@ -27,12 +38,6 @@ def get_group_id(user_id):
     if user_id in user_pairs:
         return min(user_id, user_pairs[user_id])
     return user_id
-
-def is_p1(user_id):
-    # چک می‌کند آیا این کاربر، نفر اول گروه است (کوچکترین آیدی)
-    if user_id in user_pairs:
-        return user_id == min(user_id, user_pairs[user_id])
-    return True
 
 def main_menu(user_id):
     markup = types.InlineKeyboardMarkup()
@@ -54,7 +59,7 @@ def start(message):
             user_pairs[message.from_user.id] = inviter_id
             bot.send_message(message.chat.id, "💑 اتصال موفقیت‌آمیز! لیست کارهای شما مشترک شد.")
     
-    bot.send_message(message.chat.id, "🍂 ** اینجا خونه‌ی کوچیکِ ماست، جایی که کارها رو با هم پیش می‌بریم،به دنیای نارنجیِ ما خوش اومدی!** 🍊", parse_mode="Markdown", reply_markup=main_menu(message.from_user.id))
+    bot.send_message(message.chat.id, "🍂 **به دنیای نارنجیِ ما خوش اومدی، اینجا خونه‌ی کوچیکِ ماست، جایی که کارها رو با هم پیش می‌بریم!** 🍊", parse_mode="Markdown", reply_markup=main_menu(message.from_user.id))
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
@@ -76,32 +81,36 @@ def handle_query(call):
     elif call.data == "show_tasks":
         tasks = tasks_db.get(gid, [])
         markup = types.InlineKeyboardMarkup()
+        
         if not tasks:
             bot.answer_callback_query(call.id, "لیست خالیه!")
-        else:
-            for i, item in enumerate(tasks):
-                # P1 و P2 به معنای تیک زن و مرد (یا دو پارتنر)
-                p1_s = "✅" if item['p1_done'] else "⬜"
-                p2_s = "✅" if item['p2_done'] else "⬜"
-                
-                # ردیف: تیکِ اول | تیکِ دوم | متن کار | حذف
-                markup.row(
-                    types.InlineKeyboardButton(f"{p1_s}", callback_data=f"t1_{i}"),
-                    types.InlineKeyboardButton(f"{p2_s}", callback_data=f"t2_{i}"),
-                    types.InlineKeyboardButton(f"{item['task']}", callback_data="noop"),
-                    types.InlineKeyboardButton("🗑", callback_data=f"del_{i}")
-                )
-        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="back_main"))
-        bot.edit_message_text("کارهای مشترک (P1 | P2 | نام کار):", call.message.chat.id, call.message.message_id, reply_markup=markup)
+            return
 
-    # مدیریت تیک زدن (تغییر وضعیت P1 یا P2)
+        # ساخت متن بدنه
+        task_body = "📌 **لیست کارهای ما:**\n\n"
+        for i, item in enumerate(tasks):
+            task_body += f"{i+1}. {item['task']}\n"
+            
+            # افزودن دکمه‌های کنترلی برای هر کار
+            p1_mark = "✅" if item['p1_done'] else "⬜"
+            p2_mark = "✅" if item['p2_done'] else "⬜"
+            
+            markup.row(
+                types.InlineKeyboardButton(f"من: {p1_mark}", callback_data=f"t1_{i}"),
+                types.InlineKeyboardButton(f"پارتنر: {p2_mark}", callback_data=f"t2_{i}"),
+                types.InlineKeyboardButton("🗑", callback_data=f"del_{i}")
+            )
+
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="back_main"))
+        bot.edit_message_text(task_body, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+
     elif call.data.startswith("t1_") or call.data.startswith("t2_"):
         parts = call.data.split("_")
         idx = int(parts[1])
         if gid in tasks_db and idx < len(tasks_db[gid]):
             if parts[0] == "t1": tasks_db[gid][idx]['p1_done'] = not tasks_db[gid][idx]['p1_done']
             else: tasks_db[gid][idx]['p2_done'] = not tasks_db[gid][idx]['p2_done']
-            call.data = "show_tasks" # رفرش صفحه
+            call.data = "show_tasks"
             handle_query(call)
 
     elif call.data.startswith("del_"):
@@ -122,8 +131,8 @@ def handle_query(call):
     elif call.data == "send_poem":
         partner = user_pairs.get(user_id)
         if partner:
-            bot.send_message(partner, f"عشقم برات فرستاد: {last_poem_sent.get(user_id, '...')}")
-            bot.answer_callback_query(call.id, "ارسال شد! 💌")
+            bot.send_message(partner, f"💌 عشقت برات فرستاد:\n\n{last_poem_sent.get(user_id, '...')}")
+            bot.answer_callback_query(call.id, "با موفقیت ارسال شد! 💌")
         else:
             bot.answer_callback_query(call.id, "پارتنری وصل نیست!")
 
@@ -133,7 +142,6 @@ def handle_query(call):
 def save_task(message):
     gid = get_group_id(message.from_user.id)
     if gid not in tasks_db: tasks_db[gid] = []
-    # ساختار جدید: p1_done و p2_done
     tasks_db[gid].append({"task": message.text, "p1_done": False, "p2_done": False})
     bot.send_message(message.chat.id, "اضافه شد! 🍊")
 
