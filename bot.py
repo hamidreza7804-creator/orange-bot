@@ -5,12 +5,52 @@ import random
 from flask import Flask
 import threading
 import time
+import json
+import requests
 
 TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
 bot = telebot.TeleBot(TOKEN)
+DATA_FILE = "bot_data.json"
 
-# لیست اشعار واقعی و متنوع
+# --- مدیریت حافظه (برای اینکه اطلاعات پاک نشود) ---
+user_pairs = {}
+tasks_db = {}
+last_poem_sent = {}
+
+def load_data():
+    global user_pairs, tasks_db
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r") as f:
+            data = json.load(f)
+            user_pairs = {int(k): v for k, v in data.get("user_pairs", {}).items()}
+            tasks_db = {int(k): v for k, v in data.get("tasks_db", {}).items()}
+
+def save_data():
+    with open(DATA_FILE, "w") as f:
+        json.dump({"user_pairs": user_pairs, "tasks_db": tasks_db}, f)
+
+load_data() # بارگذاری اطلاعات در شروع برنامه
+
+# --- وب‌سرور برای جلوگیری از خواب ---
+app = Flask(__name__)
+@app.route('/')
+def home(): return "Bot is alive!"
+
+def run_flask(): 
+    # این بخش به سرور اجازه می‌دهد آنلاین بماند
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+
+def keep_alive():
+    while True:
+        try:
+            # ربات هر ۵ دقیقه خودش را صدا می‌زند تا نخوابد
+            # آدرس سایت خود را اینجا بگذارید (مثال: https://orange-bot.onrender.com)
+            requests.get("https://orange-bot.onrender.com") 
+        except: pass
+        time.sleep(300)
+
+# --- باقی توابع ---
 POEMS = [
     "پاییز، هزاران برگِ زرد است که در باد رقصیدند تا به من بگویند: رها کن و عاشق باش.",
     "هر برگِ پاییزی که می‌افتد، فرصتی است برای نو شدن؛ درست مثلِ ما.",
@@ -24,19 +64,8 @@ POEMS = [
     "عاشقانه هایمان مثلِ چایِ داغِ پاییزی، جان‌بخش و ماندگار است."
 ]
 
-user_pairs = {}
-tasks_db = {}
-last_poem_sent = {}
-
-app = Flask(__name__)
-@app.route('/')
-def home(): return "Bot is alive!"
-
-def run_flask(): app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-
 def get_group_id(user_id):
-    if user_id in user_pairs:
-        return min(user_id, user_pairs[user_id])
+    if user_id in user_pairs: return min(user_id, user_pairs[user_id])
     return user_id
 
 def main_menu(user_id):
@@ -57,16 +86,10 @@ def start(message):
         if inviter_id != message.from_user.id:
             user_pairs[inviter_id] = message.from_user.id
             user_pairs[message.from_user.id] = inviter_id
+            save_data()
             bot.send_message(message.chat.id, "💑 اتصال موفقیت‌آمیز! از الان لیست کارهای شما با پارتنرتون مشترک شد.")
     
-    welcome_text = (
-        "🍂 **سلام عزیزِ دلم! به خونه‌یِ نارنجیِ ما خوش اومدی.** 🧡\n\n"
-        "اینجا یه فضایِ امن و کوچیکه برای ما دو نفر تا:\n"
-        "📝 کارهای روزمره‌مون رو با هم مدیریت کنیم.\n"
-        "💌 با شعرهای پاییزی به هم یادآوری کنیم که چقدر همدیگه رو دوست داریم.\n"
-        "هر تغییری که توی لیست بدی، پارتنرت هم می‌بینه؛ پس با هم پیش بریم!\n\n"
-        "از دکمه‌های زیر شروع کن:"
-    )
+    welcome_text = "🍂 **سلام عزیزِ دلم! به خونه‌یِ نارنجیِ ما خوش اومدی.** 🧡\n\nاینجا یه فضایِ امن و کوچیکه برای ما دو نفر تا:\n📝 کارهای روزمره‌مون رو با هم مدیریت کنیم.\n💌 با شعرهای پاییزی به هم یادآوری کنیم که چقدر همدیگه رو دوست داریم.\n\nاز دکمه‌های زیر شروع کن:"
     bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=main_menu(message.from_user.id))
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -74,19 +97,14 @@ def handle_query(call):
     user_id = call.from_user.id
     gid = get_group_id(user_id)
 
-    # پنل مدیریت - نمایش آمار گروه‌ها
     if call.data == "admin_panel":
-        if user_id != ADMIN_ID:
-            bot.answer_callback_query(call.id, "شما دسترسی ندارید!")
-            return
+        if user_id != ADMIN_ID: return
         stats = "🛡 **پنل مدیریت کاربران**\n\n"
-        if not tasks_db:
-            stats += "هنوز گروه فعالی وجود ندارد."
+        if not tasks_db: stats += "هنوز گروه فعالی وجود ندارد."
         else:
             for group_id, tasks in tasks_db.items():
                 partners = [u for u, p in user_pairs.items() if get_group_id(u) == group_id]
                 stats += f"گروه (ID: {group_id}):\nپارتنرها: {partners}\nتعداد کار: {len(tasks)}\n------------------\n"
-        
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="back_main"))
         bot.edit_message_text(stats, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
@@ -106,22 +124,17 @@ def handle_query(call):
     elif call.data == "show_tasks":
         tasks = tasks_db.get(gid, [])
         markup = types.InlineKeyboardMarkup()
-        
         if not tasks:
             bot.answer_callback_query(call.id, "لیست خالیه!")
             return
-
         task_body = "📌 **لیست کارهای ما:**\n\n"
         for i, item in enumerate(tasks):
             task_body += f"{i+1}. {item['task']}\n"
             p1_mark = "✅" if item['p1_done'] else "⬜"
             p2_mark = "✅" if item['p2_done'] else "⬜"
-            markup.row(
-                types.InlineKeyboardButton(f"من: {p1_mark}", callback_data=f"t1_{i}"),
-                types.InlineKeyboardButton(f"پارتنر: {p2_mark}", callback_data=f"t2_{i}"),
-                types.InlineKeyboardButton("🗑", callback_data=f"del_{i}")
-            )
-
+            markup.row(types.InlineKeyboardButton(f"من: {p1_mark}", callback_data=f"t1_{i}"),
+                       types.InlineKeyboardButton(f"پارتنر: {p2_mark}", callback_data=f"t2_{i}"),
+                       types.InlineKeyboardButton("🗑", callback_data=f"del_{i}"))
         markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="back_main"))
         bot.edit_message_text(task_body, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
 
@@ -131,6 +144,7 @@ def handle_query(call):
         if gid in tasks_db and idx < len(tasks_db[gid]):
             if parts[0] == "t1": tasks_db[gid][idx]['p1_done'] = not tasks_db[gid][idx]['p1_done']
             else: tasks_db[gid][idx]['p2_done'] = not tasks_db[gid][idx]['p2_done']
+            save_data()
             call.data = "show_tasks"
             handle_query(call)
 
@@ -138,6 +152,7 @@ def handle_query(call):
         idx = int(call.data.split("_")[1])
         if gid in tasks_db and idx < len(tasks_db[gid]):
             tasks_db[gid].pop(idx)
+            save_data()
         call.data = "show_tasks"
         handle_query(call)
 
@@ -154,8 +169,7 @@ def handle_query(call):
         if partner:
             bot.send_message(partner, f"💌 عشقت برات فرستاد:\n\n{last_poem_sent.get(user_id, '...')}")
             bot.answer_callback_query(call.id, "با موفقیت ارسال شد! 💌")
-        else:
-            bot.answer_callback_query(call.id, "پارتنری وصل نیست!")
+        else: bot.answer_callback_query(call.id, "پارتنری وصل نیست!")
 
     elif call.data == "back_main":
         bot.edit_message_text("🍂 **به دنیای نارنجیِ ما خوش اومدی!** 🍊", call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=main_menu(user_id))
@@ -164,18 +178,14 @@ def save_task(message):
     gid = get_group_id(message.from_user.id)
     if gid not in tasks_db: tasks_db[gid] = []
     tasks_db[gid].append({"task": message.text, "p1_done": False, "p2_done": False})
-    
-    # ارسال نوتیفیکیشن به پارتنر
+    save_data()
     partner = user_pairs.get(message.from_user.id)
-    if partner:
-        bot.send_message(partner, "🍊 **خبر خوب!**\nپارتنرت یک کار جدید به لیست کارهای مشترک اضافه کرد. برو ببین چی اضافه شده!")
-    
+    if partner: bot.send_message(partner, "🍊 **خبر خوب!**\nپارتنرت یک کار جدید اضافه کرد.")
     bot.send_message(message.chat.id, "اضافه شد! 🍊")
 
 if __name__ == '__main__':
     threading.Thread(target=run_flask).start()
+    threading.Thread(target=keep_alive).start()
     while True:
-        try:
-            bot.polling(none_stop=True, interval=1, timeout=30)
-        except Exception as e:
-            time.sleep(5)
+        try: bot.polling(none_stop=True, interval=1, timeout=30)
+        except Exception as e: time.sleep(5)
