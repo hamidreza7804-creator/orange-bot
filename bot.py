@@ -20,8 +20,12 @@ def home(): return "Bot is alive!"
 
 def run_flask(): app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
 
+# اصلاحیه مهم: ایجاد یک آیدی مشترک ثابت برای زوج
 def get_group_id(user_id):
-    return user_pairs.get(user_id, user_id)
+    if user_id in user_pairs:
+        partner_id = user_pairs[user_id]
+        return min(user_id, partner_id) # هر دو نفر همیشه به یک آیدی ارجاع داده می‌شوند
+    return user_id
 
 def main_menu(user_id):
     markup = types.InlineKeyboardMarkup()
@@ -33,19 +37,18 @@ def main_menu(user_id):
         markup.add(types.InlineKeyboardButton("🛡 پنل مدیریت", callback_data="admin_panel"))
     return markup
 
-INTRO_TEXT = "🍂 **به دنیای نارنجیِ ما خوش اومدی!** 🍊\n\nاینجا خونه‌ی کوچیکِ ماست، جایی که کارها رو با هم پیش می‌بریم و دلتنگی‌هامون رو با شعر پاییزی پر می‌کنیم."
+INTRO_TEXT = "🍂 **به دنیای نارنجیِ ما خوش اومدی!** 🍊\n\nاینجا خونه‌ی کوچیکِ ماست، جایی که کارها رو با هم پیش می‌بریم."
 
 @bot.message_handler(commands=['start'])
 def start(message):
     try:
-        # بررسی اینکه آیا کاربر از طریق لینکِ کسی اومده یا نه
         args = message.text.split()
         if len(args) > 1:
             inviter_id = int(args[1])
             if inviter_id != message.from_user.id:
                 user_pairs[inviter_id] = message.from_user.id
                 user_pairs[message.from_user.id] = inviter_id
-                bot.send_message(message.chat.id, "💑 پارتنر تو شناسایی شد و به هم متصل شدید!")
+                bot.send_message(message.chat.id, "💑 اتصال موفقیت‌آمیز! حالا لیست کارهای شما مشترک شد.")
         
         bot.send_message(message.chat.id, INTRO_TEXT, parse_mode="Markdown", reply_markup=main_menu(message.from_user.id))
     except Exception as e:
@@ -58,23 +61,23 @@ def handle_query(call):
         gid = get_group_id(user_id)
 
         if call.data == "pair_menu":
-            # ساخت لینک دعوت اختصاصی
             bot_username = bot.get_me().username
             invite_link = f"https://t.me/{bot_username}?start={user_id}"
             
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("🔗 کپی لینک دعوت", url=invite_link))
+            # این دکمه لیست چت‌ها رو باز می‌کنه تا مستقیم برای پارتنرت بفرستی
+            markup.add(types.InlineKeyboardButton("📤 اشتراک‌گذاری لینک با پارتنر", switch_inline_query=f"سلام! بیا با هم از ربات «پاییز و نارنگی» استفاده کنیم: {invite_link}"))
             markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="back_main"))
             
-            bot.edit_message_text(f"این لینک رو برای پارتنرت بفرست:\n`{invite_link}`\n\nبه محض اینکه روی لینک کلیک کنه، اتوماتیک بهت وصل می‌شه!", 
-                                  call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+            bot.edit_message_text(f"لینک دعوت شما آماده‌ست. دکمه اشتراک‌گذاری رو بزن:", 
+                                  call.message.chat.id, call.message.message_id, reply_markup=markup)
 
         elif call.data == "add_task":
             msg = bot.send_message(call.message.chat.id, "متن کار جدید رو بنویس:")
             bot.register_next_step_handler(msg, save_task)
 
         elif call.data == "show_tasks":
-            tasks = tasks_db.get(gid, [])
+            tasks = tasks_db.get(gid, []) # استفاده از گرید مشترک
             markup = types.InlineKeyboardMarkup()
             if not tasks:
                 bot.answer_callback_query(call.id, "لیست خالیه!")
@@ -86,7 +89,7 @@ def handle_query(call):
                     types.InlineKeyboardButton("🗑", callback_data=f"delete_{i}")
                 )
             markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="back_main"))
-            bot.edit_message_text("کارهای این گروه:", call.message.chat.id, call.message.message_id, reply_markup=markup)
+            bot.edit_message_text("کارهای مشترک:", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
         elif call.data.startswith("toggle_"):
             idx = int(call.data.split("_")[1])
@@ -131,7 +134,7 @@ def handle_query(call):
 
 def save_task(message):
     try:
-        gid = get_group_id(message.from_user.id)
+        gid = get_group_id(message.from_user.id) # استفاده از گرید مشترک
         if gid not in tasks_db: tasks_db[gid] = []
         tasks_db[gid].append({"task": message.text, "done": False})
         bot.send_message(message.chat.id, "اضافه شد! 🍊")
