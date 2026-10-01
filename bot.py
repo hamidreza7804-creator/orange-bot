@@ -46,6 +46,26 @@ def get_partner_id(user_id):
 def start(message):
     bot.send_message(message.chat.id, "سلام! به ربات «پاییز و نارنگی» خوش اومدی 🍂🍊\nاینجا محیط امنیه برای من و تو.\nاز دکمه‌های زیر استفاده کن:", reply_markup=get_main_menu())
 
+# این قسمت را اضافه کن تا بتوانی کار جدید اضافه کنی
+@bot.message_handler(commands=['add'])
+def add_task(message):
+    if message.chat.id not in connections:
+        bot.reply_to(message, "⚠️ اول باید با پارتنرت جفت بشی!")
+        return
+        
+    text = message.text.replace('/add', '').strip()
+    if not text:
+        bot.reply_to(message, "⚠️ لطفاً متن کار رو بعد از /add بنویس.\nمثال: `/add خرید نان`", parse_mode="Markdown")
+        return
+        
+    group_id = connections[message.chat.id]
+    if group_id not in tasks_db:
+        tasks_db[group_id] = []
+        
+    tasks_db[group_id].append({"text": text, "done": False})
+    bot.reply_to(message, "✨ به لیست اضافه شد! حالا می‌تونی در منوی اصلی با دکمه «لیست کارهای مشترک» ببینیش.")
+
+
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callback(call):
     chat_id = call.message.chat.id
