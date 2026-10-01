@@ -10,7 +10,7 @@ TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
 bot = telebot.TeleBot(TOKEN)
 
-# لیست اشعار واقعی و متنوع (می‌توانی هر چقدر خواستی به این لیست اضافه کنی)
+# لیست اشعار واقعی و متنوع
 POEMS = [
     "پاییز، هزاران برگِ زرد است که در باد رقصیدند تا به من بگویند: رها کن و عاشق باش.",
     "هر برگِ پاییزی که می‌افتد، فرصتی است برای نو شدن؛ درست مثلِ ما.",
@@ -57,16 +57,41 @@ def start(message):
         if inviter_id != message.from_user.id:
             user_pairs[inviter_id] = message.from_user.id
             user_pairs[message.from_user.id] = inviter_id
-            bot.send_message(message.chat.id, "💑 اتصال موفقیت‌آمیز! لیست کارهای شما مشترک شد.")
+            bot.send_message(message.chat.id, "💑 اتصال موفقیت‌آمیز! از الان لیست کارهای شما با پارتنرتون مشترک شد.")
     
-    bot.send_message(message.chat.id, "🍂 **به دنیای نارنجیِ ما خوش اومدی، اینجا خونه‌ی کوچیکِ ماست، جایی که کارها رو با هم پیش می‌بریم!** 🍊", parse_mode="Markdown", reply_markup=main_menu(message.from_user.id))
+    welcome_text = (
+        "🍂 **سلام عزیزِ دلم! به خونه‌یِ نارنجیِ ما خوش اومدی.** 🧡\n\n"
+        "اینجا یه فضایِ امن و کوچیکه برای ما دو نفر تا:\n"
+        "📝 کارهای روزمره‌مون رو با هم مدیریت کنیم.\n"
+        "💌 با شعرهای پاییزی به هم یادآوری کنیم که چقدر همدیگه رو دوست داریم.\n"
+        "هر تغییری که توی لیست بدی، پارتنرت هم می‌بینه؛ پس با هم پیش بریم!\n\n"
+        "از دکمه‌های زیر شروع کن:"
+    )
+    bot.send_message(message.chat.id, welcome_text, parse_mode="Markdown", reply_markup=main_menu(message.from_user.id))
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     user_id = call.from_user.id
     gid = get_group_id(user_id)
 
-    if call.data == "pair_menu":
+    # پنل مدیریت - نمایش آمار گروه‌ها
+    if call.data == "admin_panel":
+        if user_id != ADMIN_ID:
+            bot.answer_callback_query(call.id, "شما دسترسی ندارید!")
+            return
+        stats = "🛡 **پنل مدیریت کاربران**\n\n"
+        if not tasks_db:
+            stats += "هنوز گروه فعالی وجود ندارد."
+        else:
+            for group_id, tasks in tasks_db.items():
+                partners = [u for u, p in user_pairs.items() if get_group_id(u) == group_id]
+                stats += f"گروه (ID: {group_id}):\nپارتنرها: {partners}\nتعداد کار: {len(tasks)}\n------------------\n"
+        
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="back_main"))
+        bot.edit_message_text(stats, call.message.chat.id, call.message.message_id, parse_mode="Markdown", reply_markup=markup)
+
+    elif call.data == "pair_menu":
         bot_username = bot.get_me().username
         invite_link = f"https://t.me/{bot_username}?start={user_id}"
         markup = types.InlineKeyboardMarkup()
@@ -86,15 +111,11 @@ def handle_query(call):
             bot.answer_callback_query(call.id, "لیست خالیه!")
             return
 
-        # ساخت متن بدنه
         task_body = "📌 **لیست کارهای ما:**\n\n"
         for i, item in enumerate(tasks):
             task_body += f"{i+1}. {item['task']}\n"
-            
-            # افزودن دکمه‌های کنترلی برای هر کار
             p1_mark = "✅" if item['p1_done'] else "⬜"
             p2_mark = "✅" if item['p2_done'] else "⬜"
-            
             markup.row(
                 types.InlineKeyboardButton(f"من: {p1_mark}", callback_data=f"t1_{i}"),
                 types.InlineKeyboardButton(f"پارتنر: {p2_mark}", callback_data=f"t2_{i}"),
@@ -143,6 +164,12 @@ def save_task(message):
     gid = get_group_id(message.from_user.id)
     if gid not in tasks_db: tasks_db[gid] = []
     tasks_db[gid].append({"task": message.text, "p1_done": False, "p2_done": False})
+    
+    # ارسال نوتیفیکیشن به پارتنر
+    partner = user_pairs.get(message.from_user.id)
+    if partner:
+        bot.send_message(partner, "🍊 **خبر خوب!**\nپارتنرت یک کار جدید به لیست کارهای مشترک اضافه کرد. برو ببین چی اضافه شده!")
+    
     bot.send_message(message.chat.id, "اضافه شد! 🍊")
 
 if __name__ == '__main__':
