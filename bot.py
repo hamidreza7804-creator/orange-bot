@@ -33,7 +33,7 @@ def main_menu(user_id):
         markup.add(types.InlineKeyboardButton("🛡 پنل مدیریت", callback_data="admin_panel"))
     return markup
 
-INTRO_TEXT = "🍂 **به دنیای نارنجیِ ما خوش اومدی!** 🍊\n\nاینجا خونه‌ی کوچیکِ ماست، جایی که کارها رو با هم پیش می‌بریم و دلتنگی‌هامون رو با شعر پاییزی پر می‌کنیم"
+INTRO_TEXT = "🍂 **به دنیای نارنجیِ ما خوش اومدی!** 🍊\n\nاینجا خونه‌ی کوچیکِ ماست، جایی که کارها رو با هم پیش می‌بریم و دلتنگی‌هامون رو با شعر پاییزی پر می‌کنیم."
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -71,7 +71,11 @@ def handle_query(call):
                 return
             for i, item in enumerate(tasks):
                 status = "✅" if item['done'] else "⬜️"
-                markup.add(types.InlineKeyboardButton(f"{status} {item['task']}", callback_data=f"toggle_{i}"))
+                # اینجا اضافه شد: دکمه تیک + دکمه حذف در یک سطر
+                markup.row(
+                    types.InlineKeyboardButton(f"{status} {item['task']}", callback_data=f"toggle_{i}"),
+                    types.InlineKeyboardButton("🗑", callback_data=f"delete_{i}")
+                )
             markup.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="back_main"))
             bot.edit_message_text("کارهای این گروه:", call.message.chat.id, call.message.message_id, reply_markup=markup)
 
@@ -79,6 +83,14 @@ def handle_query(call):
             idx = int(call.data.split("_")[1])
             if gid in tasks_db and idx < len(tasks_db[gid]):
                 tasks_db[gid][idx]['done'] = not tasks_db[gid][idx]['done']
+            handle_query(call)
+
+        elif call.data.startswith("delete_"):
+            # منطق جدید: حذف کار
+            idx = int(call.data.split("_")[1])
+            if gid in tasks_db and idx < len(tasks_db[gid]):
+                tasks_db[gid].pop(idx)
+                bot.answer_callback_query(call.id, "کار حذف شد.")
             handle_query(call)
 
         elif call.data == "daily_poem":
